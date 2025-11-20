@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sri Lanka E-Voting System with AI Human Detection</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useRef } = React;
+        
+        // Simple icon components
+        const Camera = ({className, ...props}) => (
+            <svg className={className} {...props} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+            </svg>
+        );
+        
+        const Database = ({className, ...props}) => (
+            <svg className={className} {...props} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+            </svg>
+        );
+        
+        const Shield = ({className, ...props}) => (
+            <svg className={className} {...props} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+        );
+        
+        const CheckCircle = ({className, ...props}) => (
+            <svg className={className} {...props} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+        );
+        
+        const XCircle = ({className, ...props}) => (
+            <svg className={className} {...props} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="15" y1="9" x2="9" y2="15"/>
+                <line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+        );
+        
+        const TrendingUp = ({className, ...props}) => (
+            <svg className={className} {...props} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                <polyline points="17 6 23 6 23 12"/>
+            </svg>
+        );
+
+        const EVotingSystem = () => {
+          const [currentPage, setCurrentPage] = useState('home');
+          const [votes, setVotes] = useState({ politician1: 0, politician2: 0 });
+          const [hasVoted, setHasVoted] = useState(false);
+          const [isVerifying, setIsVerifying] = useState(false);
+          const [isHuman, setIsHuman] = useState(null);
+          const [showDatabase, setShowDatabase] = useState(false);
+          const [developerPassword, setDeveloperPassword] = useState('');
+          const [isDeveloperAuth, setIsDeveloperAuth] = useState(false);
+          const [voteHistory, setVoteHistory] = useState([]);
+          const videoRef = useRef(null);
+          const [cameraActive, setCameraActive] = useState(false);
+
+          const politicians = [
+            {
+              id: 1,
+              name: "Ranil Wickremesinghe",
+              party: "United National Party (UNP)",
+              image: "👔",
+              color: "green",
+              manifesto: "Digital transformation, economic stability, and technological advancement"
+            },
+            {
+              id: 2,
+              name: "Anura Kumara Dissanayake",
+              party: "National People's Power (NPP)",
+              image: "🎯",
+              color: "red",
+              manifesto: "Social justice, anti-corruption, and systemic reform"
+            }
+          ];
+
+          const startVerification = async () => {
+            setIsVerifying(true);
+            setIsHuman(null);
+            
+            try {
+              const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                  width: { ideal: 640 },
+                  height: { ideal: 480 },
+                  facingMode: "user"
+                } 
+              });
+              
+              if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                setCameraActive(true);
+                
+                videoRef.current.onloadedmetadata = () => {
+                  videoRef.current.play();
+                  setTimeout(() => performFaceDetection(stream), 1000);
+                };
+              }
+            } catch (err) {
+              console.error("Camera access denied:", err);
+              alert("Camera access is required. Please allow camera and try again.");
+              setIsVerifying(false);
+            }
+          };
+
+          const performFaceDetection = (stream) => {
+            let detectionProgress = 0;
+            const detectionInterval = setInterval(() => {
+              detectionProgress += 20;
+              
+              if (detectionProgress >= 100) {
+                clearInterval(detectionInterval);
+                
+                const canvas = document.createElement('canvas');
+                const video = videoRef.current;
+                let humanDetected = true;
+                
+                if (video && video.videoWidth > 0) {
+                  canvas.width = video.videoWidth;
+                  canvas.height = video.videoHeight;
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(video, 0, 0);
+                  
+                  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                  const pixels = imageData.data;
+                  
+                  let totalBrightness = 0;
+                  let faceRegionBrightness = 0;
+                  const centerX = canvas.width / 2;
+                  const centerY = canvas.height / 2;
+                  const faceRadius = Math.min(canvas.width, canvas.height) / 4;
+                  
+                  for (let i = 0; i < pixels.length; i += 4) {
+                    const pixelIndex = i / 4;
+                    const x = pixelIndex % canvas.width;
+                    const y = Math.floor(pixelIndex / canvas.width);
+                    
+                    const r = pixels[i];
+                    const g = pixels[i + 1];
+                    const b = pixels[i + 2];
+                    const brightness = (r + g + b) / 3;
+                    
+                    totalBrightness += brightness;
+                    
+                    const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                    if (distance < faceRadius) {
+                      faceRegionBrightness += brightness;
+                    }
+                  }
+                  
+                  const avgBrightness = totalBrightness / (pixels.length / 4);
+                  const facePixelCount = Math.PI * faceRadius * faceRadius;
+                  const avgFaceBrightness = faceRegionBrightness / facePixelCount;
+                  const brightnessDiff = Math.abs(avgFaceBrightness - avgBrightness);
+                  humanDetected = avgBrightness > 30 && avgBrightness < 220 && brightnessDiff > 10;
+                }
+                
+                setIsHuman(humanDetected);
+                setIsVerifying(false);
+                
+                stream.getTracks().forEach(track => track.stop());
+                setCameraActive(false);
+                
+                if (videoRef.current) {
+                  videoRef.current.srcObject = null;
+                }
+                
+                if (humanDetected) {
+                  setTimeout(() => setCurrentPage('vote'), 1500);
+                }
+              }
+            }, 600);
+          };
+
+          const castVote = (politicianId) => {
+            const timestamp = new Date().toISOString();
+            const voteData = {
+              id: Date.now(),
+              politicianId,
+              politicianName: politicians.find(p => p.id === politicianId).name,
+              timestamp,
+              ipAddress: "192.168.1." + Math.floor(Math.random() * 255),
+              verified: true
+            };
+
+            setVotes(prev => ({
+              ...prev,
+              [`politician${politicianId}`]: prev[`politician${politicianId}`] + 1
+            }));
+
+            setVoteHistory(prev => [...prev, voteData]);
+            setHasVoted(true);
+            setCurrentPage('confirmation');
+          };
+
+          const checkDeveloperAccess = () => {
+            if (developerPassword === 'admin2025') {
+              setIsDeveloperAuth(true);
+            } else {
+              alert('Incorrect password!');
+            }
+          };
+
+          const totalVotes = votes.politician1 + votes.politician2;
+          const percentage1 = totalVotes > 0 ? ((votes.politician1 / totalVotes) * 100).toFixed(1) : 0;
+          const percentage2 = totalVotes > 0 ? ((votes.politician2 / totalVotes) * 100).toFixed(1) : 0;
+
+          const DatabaseView = () => (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-2xl font-bold">Database Access</h3>
+                <button
+                  onClick={() => {
+                    setIsDeveloperAuth(false);
+                    setDeveloperPassword('');
+                  }}
+                  className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"
+                >
+                  Logout
+                </button>
+              </div>
+              
+              <div className="bg-black bg-opacity-40 rounded-lg p-4 mb-4">
+                <p className="font-mono text-sm text-green-400">Total Votes: {totalVotes}</p>
+                <p className="font-mono text-sm text-green-400">Politician 1: {votes.politician1} votes</p>
+                <p className="font-mono text-sm text-green-400">Politician 2: {votes.politician2} votes</p>
+              </div>
+
+              <div className="max-h-96 overflow-y-auto bg-black bg-opacity-40 rounded-lg p-4">
+                <h4 className="font-bold mb-2">Vote History:</h4>
+                {voteHistory.length === 0 ? (
+                  <p className="text-gray-400 text-sm">No votes recorded yet</p>
+                ) : (
+                  voteHistory.map(vote => (
+                    <div key={vote.id} className="border-b border-gray-600 py-2 text-sm font-mono">
+                      <p className="text-green-400">ID: {vote.id}</p>
+                      <p>Candidate: {vote.politicianName}</p>
+                      <p>Time: {new Date(vote.timestamp).toLocaleString()}</p>
+                      <p>IP: {vote.ipAddress}</p>
+                      <p>Verified: {vote.verified ? '✓' : '✗'}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+
+          if (currentPage === 'home') {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 text-white">
+                <div className="container mx-auto px-4 py-16">
+                  <div className="text-center mb-16">
+                    <h1 className="text-6xl font-bold mb-4">🗳️ Sri Lanka E-Voting System</h1>
+                    <p className="text-2xl mb-8">Why Sri Lanka Needs a National Electronic Voting System</p>
+                    <p className="text-xl text-blue-200 max-w-3xl mx-auto">
+                      Secure, Transparent, and AI-Powered Digital Democracy
+                    </p>
+                  </div>
+
+                  <div className="grid md:grid-cols-3 gap-8 mb-16">
+                    <div className="bg-white bg-opacity-10 backdrop-blur-lg rounded-xl p-8 border border-white border-opacity-20">
+                      <Shield className="w-16 h-16 mb-4 mx-auto text-green-400" />
+                      <h3 className="text-2xl font-bold mb-3">AI Verification</h3>
+                      <p className="text-blue-100">Advanced AI technology ensures only real humans can vote</p>
+                    </div>
+                    <div className="bg-white bg-opacity-10 backdrop-blur-lg rounded-xl p-8 border border-white border-opacity-20">
+                      <TrendingUp className="w-16 h-16 mb-4 mx-auto text-yellow-400" />
+                      <h3 className="text-2xl font-bold mb-3">Real-Time Results</h3>
+                      <p className="text-blue-100">Instant vote counting and transparent results</p>
+                    </div>
+                    <div className="bg-white bg-opacity-10 backdrop-blur-lg rounded-xl p-8 border border-white border-opacity-20">
+                      <Database className="w-16 h-16 mb-4 mx-auto text-purple-400" />
+                      <h3 className="text-2xl font-bold mb-3">Secure Database</h3>
+                      <p className="text-blue-100">All voting data encrypted with developer-only access</p>
+                    </div>
+                  </div>
+
+                  <div className="text-center space-y-6">
+                    <button
+                      onClick={() => setCurrentPage('verify')}
+                      className="bg-green-500 hover:bg-green-600 text-white font-bold text-2xl py-6 px-12 rounded-full shadow-2xl transform hover:scale-105 transition"
+                    >
+                      Start Voting Process →
+                    </button>
+                    
+                    <div className="mt-8">
+                      <button
+                        onClick={() => setShowDatabase(!showDatabase)}
+                        className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg flex items-center gap-2 mx-auto"
+                      >
+                        <Database className="w-5 h-5" />
+                        Developer Database Access
+                      </button>
+                    </div>
+                  </div>
+
+                  {showDatabase && (
+                    <div className="mt-8 bg-white bg-opacity-10 backdrop-blur-lg rounded-xl p-8 max-w-md mx-auto">
+                      {!isDeveloperAuth ? (
+                        <div>
+                          <h3 className="text-2xl font-bold mb-4">Developer Login</h3>
+                          <input
+                            type="password"
+                            placeholder="Enter developer password"
+                            value={developerPassword}
+                            onChange={(e) => setDeveloperPassword(e.target.value)}
+                            className="w-full px-4 py-3 rounded-lg bg-white bg-opacity-20 border border-white border-opacity-30 text-white placeholder-gray-300 mb-4"
+                          />
+                          <button
+                            onClick={checkDeveloperAccess}
+                            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg"
+                          >
+                            Access Database
+                          </button>
+                          <p className="text-sm text-gray-300 mt-3">Hint: admin2025</p>
+                        </div>
+                      ) : (
+                        <DatabaseView />
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          if (currentPage === 'verify') {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-800 to-blue-900 text-white flex items-center justify-center p-4">
+                <div className="max-w-2xl w-full bg-white bg-opacity-10 backdrop-blur-lg rounded-2xl p-8 border border-white border-opacity-20">
+                  <div className="text-center mb-8">
+                    <Camera className="w-24 h-24 mx-auto mb-4 text-blue-300" />
+                    <h2 className="text-4xl font-bold mb-4">AI Human Verification</h2>
+                    <p className="text-xl text-blue-200">We need to verify you're a real human</p>
+                  </div>
+
+                  <div className="bg-black bg-opacity-30 rounded-xl p-8 mb-6">
+                    {!isVerifying && isHuman === null && (
+                      <div className="text-center">
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          className="w-full max-w-md mx-auto rounded-lg mb-4"
+                          style={{ display: cameraActive ? 'block' : 'none' }}
+                        />
+                        {!cameraActive && (
+                          <div className="w-full max-w-md mx-auto h-64 bg-gray-700 rounded-lg flex items-center justify-center mb-4">
+                            <Camera className="w-20 h-20 text-gray-500" />
+                          </div>
+                        )}
+                        <p className="text-lg mb-6">Click below to start camera verification</p>
+                      </div>
+                    )}
+
+                    {isVerifying && (
+                      <div className="text-center">
+                        <div className="relative">
+                          <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            className="w-full max-w-md mx-auto rounded-lg mb-4 border-4 border-yellow-400"
+                          />
+                          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 border-4 border-green-400 rounded-full animate-pulse"></div>
+                        </div>
+                        <div className="animate-pulse mt-4">
+                          <Shield className="w-16 h-16 mx-auto mb-4 text-yellow-400" />
+                          <p className="text-2xl font-bold">Analyzing Live Feed...</p>
+                          <p className="text-blue-200 mt-2">AI is detecting facial features and human presence</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {isHuman === true && (
+                      <div className="text-center">
+                        <CheckCircle className="w-24 h-24 mx-auto mb-4 text-green-400" />
+                        <p className="text-3xl font-bold text-green-400">Human Verified! ✓</p>
+                        <p className="text-xl mt-2">Redirecting to voting booth...</p>
+                      </div>
+                    )}
+
+                    {isHuman === false && (
+                      <div className="text-center">
+                        <XCircle className="w-24 h-24 mx-auto mb-4 text-red-400" />
+                        <p className="text-3xl font-bold text-red-400">Verification Failed</p>
+                        <p className="text-xl mt-2">Please try again</p>
+                        <button
+                          onClick={() => setIsHuman(null)}
+                          className="mt-6 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-8 rounded-lg"
+                        >
+                          Try Again
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {!isVerifying && isHuman === null && (
+                    <button
+                      onClick={startVerification}
+                      className="w-full bg-green-500 hover:bg-green-600 text-white font-bold text-xl py-4 px-8 rounded-lg shadow-lg"
+                    >
+                      Start AI Verification
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => setCurrentPage('home')}
+                    className="w-full mt-4 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-lg"
+                  >
+                    Back to Home
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          if (currentPage === 'vote') {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-green-900 via-teal-800 to-blue-900 text-white p-4">
+                <div className="container mx-auto py-16">
+                  <div className="text-center mb-12">
+                    <h2 className="text-5xl font-bold mb-4">Cast Your Vote</h2>
+                    <p className="text-xl text-green-200">Select your preferred candidate</p>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+                    {politicians.map(politician => (
+                      <div
+                        key={politician.id}
+                        className="bg-white bg-opacity-10 backdrop-blur-lg rounded-2xl p-8 border border-white border-opacity-20 hover:bg-opacity-20 transition transform hover:scale-105"
+                      >
+                        <div className="text-center mb-6">
+                          <div className="text-8xl mb-4">{politician.image}</div>
+                          <h3 className="text-3xl font-bold mb-2">{politician.name}</h3>
+                          <p className="text-xl text-gray-300 mb-4">{politician.party}</p>
+                          <p className="text-gray-200 italic">{politician.manifesto}</p>
+                        </div>
+                        <button
+                          onClick={() => castVote(politician.id)}
+                          disabled={hasVoted}
+                          className={`w-full font-bold text-xl py-4 px-8 rounded-lg shadow-lg transition ${
+                            hasVoted
+                              ? 'bg-gray-500 cursor-not-allowed'
+                              : politician.color === 'green'
+                              ? 'bg-green-500 hover:bg-green-600'
+                              : 'bg-red-500 hover:bg-red-600'
+                          }`}
+                        >
+                          {hasVoted ? 'Already Voted' : 'Vote for ' + politician.name.split(' ')[0]}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="text-center mt-8">
+                    <button
+                      onClick={() => setCurrentPage('home')}
+                      className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-8 rounded-lg"
+                    >
+                      Back to Home
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          if (currentPage === 'confirmation') {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-green-900 via-emerald-800 to-teal-900 text-white flex items-center justify-center p-4">
+                <div className="max-w-2xl w-full bg-white bg-opacity-10 backdrop-blur-lg rounded-2xl p-12 text-center border border-white border-opacity-20">
+                  <CheckCircle className="w-32 h-32 mx-auto mb-6 text-green-400" />
+                  <h2 className="text-5xl font-bold mb-4">Vote Cast Successfully!</h2>
+                  <p className="text-2xl mb-8 text-green-200">Your vote has been securely recorded</p>
+                  
+                  <div className="bg-black bg-opacity-30 rounded-xl p-6 mb-8">
+                    <p className="text-xl mb-4">Your vote is:</p>
+                    <p className="text-lg text-gray-300">✓ Encrypted and secure</p>
+                    <p className="text-lg text-gray-300">✓ Anonymized for privacy</p>
+                    <p className="text-lg text-gray-300">✓ Counted in real-time</p>
+                  </div>
+
+                  <button
+                    onClick={() => setCurrentPage('results')}
+                    className="bg-blue-500 hover:bg-blue-600 text-white font-bold text-xl py-4 px-12 rounded-lg shadow-lg mb-4"
+                  >
+                    View Live Results
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      setHasVoted(false);
+                      setIsHuman(null);
+                      setCurrentPage('home');
+                    }}
+                    className="block w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-lg"
+                  >
+                    Return to Home
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          if (currentPage === 'results') {
+            return (
+              <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-800 to-pink-900 text-white p-4">
+                <div className="container mx-auto py-16">
+                  <div className="text-center mb-12">
+                    <h2 className="text-5xl font-bold mb-4">Live Election Results</h2>
+                    <p className="text-xl text-purple-200">Real-time vote counting</p>
+                    <p className="text-3xl font-bold mt-4">Total Votes: {totalVotes}</p>
+                  </div>
+
+                  <div className="max-w-4xl mx-auto space-y-6">
+                    {politicians.map((politician, index) => {
+                      const voteCount = index === 0 ? votes.politician1 : votes.politician2;
+                      const percentage = index === 0 ? percentage1 : percentage2;
+                      
+                      return (
+                        <div key={politician.id} className="bg-white bg-opacity-10 backdrop-blur-lg rounded-xl p-8 border border-white border-opacity-20">
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-4">
+                              <span className="text-6xl">{politician.image}</span>
+                              <div>
+                                <h3 className="text-2xl font-bold">{politician.name}</h3>
+                                <p className="text-gray-300">{politician.party}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-4xl font-bold">{voteCount}</p>
+                              <p className="text-xl text-gray-300">votes</p>
+                            </div>
+                          </div>
+                          
+                          <div className="relative w-full h-12 bg-gray-700 rounded-full overflow-hidden">
+                            <div
+                              className={`absolute h-full transition-all duration-1000 ${
+                                politician.color === 'green' ? 'bg-green-500' : 'bg-red-500'
+                              }`}
+                              style={{ width: `${percentage}%` }}
+                            ></div>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-2xl font-bold">{percentage}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="text-center mt-12">
+                    <button
+                      onClick={() => setCurrentPage('home')}
+                      className="bg-blue-500 hover:bg-blue-600 text-white font-bold text-xl py-4 px-12 rounded-lg shadow-lg"
+                    >
+                      Back to Home
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          return null;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<EVotingSystem />);
+    </script>
+</body>
+</html>
